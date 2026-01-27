@@ -52,8 +52,19 @@ h1{
   border:none;
   margin-top:12px;
 }
-.btn-in{background:#22c55e;color:white;}
-.btn-out{background:#ef4444;color:white;}
+
+/* EXTRA LIGHT COLORS */
+.btn-in{
+  background:#e8fdf2;
+  color:#14532d;
+  border:1px solid #bbf7d0;
+}
+.btn-out{
+  background:#ffecec;
+  color:#7f1d1d;
+  border:1px solid #fecaca;
+}
+
 .preview{width:100%;margin-top:10px;border-radius:14px;display:none;}
 .small{font-size:13px;color:var(--muted);margin-top:6px;}
 </style>
@@ -84,6 +95,12 @@ function checkIn(){
   getLocation(true);
 }
 
+function checkOut(){
+  uploadWorkPhotos();
+  getLocation(false);
+}
+
+// SELFIE
 function takeSelfie(){
   const input=document.createElement("input");
   input.type="file";
@@ -103,33 +120,7 @@ function takeSelfie(){
   input.click();
 }
 
-function getLocation(isCheckIn){
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const lat=pos.coords.latitude;
-    const lng=pos.coords.longitude;
-    document.getElementById("locationText").innerText="Location: "+lat+","+lng;
-
-    if(isCheckIn){
-      checkInLat=lat;
-      checkInLng=lng;
-      localStorage.setItem("checkin_location",JSON.stringify({lat,lng}));
-    }else{
-      const saved=JSON.parse(localStorage.getItem("checkin_location"));
-      if(saved){
-        const dist=calcDistance(saved.lat,saved.lng,lat,lng);
-        if(dist>0.2){
-          alert("⚠️ You moved more than 200 meters from check-in location!");
-        }
-      }
-    }
-  });
-}
-
-function checkOut(){
-  uploadWorkPhotos();
-  getLocation(false);
-}
-
+// WORK PHOTOS
 function uploadWorkPhotos(){
   const input=document.createElement("input");
   input.type="file";
@@ -138,6 +129,51 @@ function uploadWorkPhotos(){
   input.click();
 }
 
+// LOCATION + AREA NAME
+function getLocation(isCheckIn){
+  if(!navigator.geolocation){
+    alert("GPS not supported");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat=pos.coords.latitude;
+    const lng=pos.coords.longitude;
+
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+      .then(res=>res.json())
+      .then(data=>{
+        const address = data.display_name;
+
+        document.getElementById("locationText").innerText =
+          "Location: " + address;
+
+        if(isCheckIn){
+          checkInLat=lat;
+          checkInLng=lng;
+          localStorage.setItem("checkin_location",
+            JSON.stringify({lat,lng,address}));
+        }else{
+          const saved=JSON.parse(localStorage.getItem("checkin_location"));
+          if(saved){
+            const dist=calcDistance(saved.lat,saved.lng,lat,lng);
+            if(dist>0.2){
+              alert("⚠️ You moved more than 200 meters from check-in location!");
+            }
+          }
+        }
+      })
+      .catch(()=>{
+        document.getElementById("locationText").innerText =
+          "Location: "+lat+","+lng;
+      });
+
+  },()=>{
+    alert("Location permission denied");
+  });
+}
+
+// DISTANCE CALCULATION (KM)
 function calcDistance(lat1,lon1,lat2,lon2){
   const R=6371;
   const dLat=(lat2-lat1)*Math.PI/180;
