@@ -15,70 +15,21 @@
 body{
   font-family:'SF Pro Display',sans-serif;
   background:linear-gradient(180deg,#e0e7ff 0%,#fff 100%);
-  color:var(--text-primary);
-  min-height:100vh;
-  display:flex;justify-content:center;align-items:center;
+  min-height:100vh;display:flex;justify-content:center;align-items:center;
 }
 .app-container{
-  width:100%;max-width:460px;background:var(--surface);
-  border-radius:32px;box-shadow:0 8px 20px rgba(0,0,0,0.1);
-  border:1px solid var(--separator);overflow:hidden;position:relative;
+  width:100%;max-width:460px;background:#fff;
+  border-radius:32px;box-shadow:0 8px 20px rgba(0,0,0,.1);
   padding:40px 20px;text-align:center;
 }
-.logo{
-  width:120px;height:120px;border-radius:28px;object-fit:cover;
-  background:linear-gradient(135deg,var(--primary),var(--accent));
-  padding:4px;margin-top:10px;
-}
-h1{
-  font-size:30px;margin-top:20px;font-weight:700;
-  background:linear-gradient(135deg,var(--primary),var(--accent));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-}
-.card{
-  border:1px solid var(--separator);
-  background:linear-gradient(145deg,#f9f9ff,#edf2ff);
-  border-radius:20px;padding:20px;
-  box-shadow:0 4px 8px rgba(0,0,0,0.08);
-  margin-top:20px;
-}
-.btn{
-  width:100%;
-  border-radius:20px;
-  padding:18px;
-  font-size:17px;
-  font-weight:600;
-  cursor:pointer;
-  border:none;
-  margin-top:12px;
-}
-
-/* EXTRA LIGHT COLORS */
-.btn-in{
-  background:#e8fdf2;
-  color:#14532d;
-  border:1px solid #bbf7d0;
-}
-.btn-out{
-  background:#ffecec;
-  color:#7f1d1d;
-  border:1px solid #fecaca;
-}
-
-.preview{width:100%;margin-top:10px;border-radius:14px;display:none;}
-.small{font-size:13px;color:var(--muted);margin-top:6px;}
-
-.warning{
-  display:none;
-  margin-top:10px;
-  padding:10px;
-  border-radius:12px;
-  background:#fff7ed;
-  color:#9a3412;
-  font-size:14px;
-  font-weight:600;
-  border:1px solid #fed7aa;
-}
+.logo{width:120px;border-radius:28px;background:linear-gradient(135deg,var(--primary),var(--accent));padding:4px;}
+h1{margin:20px 0;font-size:28px;}
+.card{background:#f9f9ff;padding:20px;border-radius:20px;margin-top:15px;}
+.btn{width:100%;padding:16px;border-radius:18px;border:none;font-weight:600;margin-top:12px;}
+.btn-in{background:#e8fdf2;color:#14532d;}
+.btn-out{background:#ffecec;color:#7f1d1d;}
+.small{font-size:13px;margin-top:8px;color:#555;}
+.warning{display:none;background:#fee2e2;color:#7f1d1d;padding:10px;border-radius:12px;margin-top:10px;}
 </style>
 </head>
 
@@ -89,115 +40,87 @@ h1{
 <h1>Attendance</h1>
 
 <div class="card">
-  <button class="btn btn-in" onclick="checkIn()">🟢 Check In</button>
-  <button class="btn btn-out" onclick="checkOut()">🔴 Check Out</button>
+<button class="btn btn-in" onclick="checkIn()">Check In</button>
+<button class="btn btn-out" onclick="checkOut()">Check Out</button>
 </div>
 
-<div id="warningText" class="warning">⚠️ Upload your work photos</div>
+<div id="warningText" class="warning"></div>
 
 <div class="card">
-  <img id="selfiePreview" class="preview">
-  <div id="locationText" class="small"></div>
-  <div id="timeText" class="small"></div>
+<div id="locationText" class="small"></div>
+<div id="timeText" class="small"></div>
 </div>
 
 <script>
-let checkInLat=null, checkInLng=null;
-
 function checkIn(){
-  document.getElementById("warningText").style.display="none";
-  takeSelfie();
   getLocation(true);
 }
 
 function checkOut(){
-  document.getElementById("warningText").style.display="block";
-  takeWorkPhotos();
   getLocation(false);
 }
 
-// SELFIE (CHECKIN)
-function takeSelfie(){
-  const input=document.createElement("input");
-  input.type="file";
-  input.accept="image/*";
-  input.capture="camera";
-  input.onchange=e=>{
-    const file=e.target.files[0];
-    const reader=new FileReader();
-    reader.onload=()=>{
-      document.getElementById("selfiePreview").src=reader.result;
-      document.getElementById("selfiePreview").style.display="block";
-      const now=new Date();
-      document.getElementById("timeText").innerText="Time: "+now.toLocaleString();
-    }
-    reader.readAsDataURL(file);
-  }
-  input.click();
-}
-
-// WORK PHOTOS (CHECKOUT) - CAMERA + MULTIPLE
-function takeWorkPhotos(){
-  const input=document.createElement("input");
-  input.type="file";
-  input.accept="image/*";
-  input.capture="camera";
-  input.multiple=true;
-  input.click();
-}
-
-// LOCATION + AREA NAME
 function getLocation(isCheckIn){
   if(!navigator.geolocation){
     alert("GPS not supported");
     return;
   }
 
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const lat=pos.coords.latitude;
-    const lng=pos.coords.longitude;
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const lat=pos.coords.latitude;
+      const lng=pos.coords.longitude;
 
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+      const saved=JSON.parse(localStorage.getItem("checkin_location"));
+
+      if(!isCheckIn && !saved){
+        alert("Please check-in first");
+        return;
+      }
+
+      let dist=0;
+      if(!isCheckIn){
+        dist=calcDistance(saved.lat,saved.lng,lat,lng);
+      }
+
+      if(!isCheckIn && dist>0.5){
+        document.getElementById("warningText").style.display="block";
+        document.getElementById("warningText").innerText=
+        "You are not at work location. Ask admin to approve checkout.";
+        return;
+      }
+
+      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
       .then(res=>res.json())
       .then(data=>{
-        const address = data.display_name;
-
-        document.getElementById("locationText").innerText =
-          "Location: " + address;
+        document.getElementById("locationText").innerText="Location: "+data.display_name;
+        document.getElementById("timeText").innerText="Time: "+new Date().toLocaleString();
 
         if(isCheckIn){
-          localStorage.setItem("checkin_location",
-            JSON.stringify({lat,lng,address}));
+          localStorage.setItem("checkin_location",JSON.stringify({lat,lng}));
+          alert("Check-in successful");
         }else{
-          const saved=JSON.parse(localStorage.getItem("checkin_location"));
-          if(saved){
-            const dist=calcDistance(saved.lat,saved.lng,lat,lng);
-            if(dist>0.2){
-              alert("⚠️ You moved more than 200 meters from check-in location!");
-            }
-          }
+          alert("Checkout successful");
         }
       })
       .catch(()=>{
-        document.getElementById("locationText").innerText =
-          "Location: "+lat+","+lng;
+        document.getElementById("locationText").innerText="Location: "+lat+","+lng;
       });
-
-  },()=>{
-    alert("Location permission denied");
-  });
+    },
+    err=>{
+      alert("Location error: "+err.message);
+    }
+  );
 }
 
-// DISTANCE CALCULATION (KM)
 function calcDistance(lat1,lon1,lat2,lon2){
   const R=6371;
   const dLat=(lat2-lat1)*Math.PI/180;
   const dLon=(lon2-lon1)*Math.PI/180;
-  const a=Math.sin(dLat/2)*Math.sin(dLat/2)+
+  const a=Math.sin(dLat/2)**2+
           Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
-          Math.sin(dLon/2)*Math.sin(dLon/2);
-  const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  return R*c;
+          Math.sin(dLon/2)**2;
+  return R*(2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 </script>
 
