@@ -67,6 +67,18 @@ h1{
 
 .preview{width:100%;margin-top:10px;border-radius:14px;display:none;}
 .small{font-size:13px;color:var(--muted);margin-top:6px;}
+
+.warning{
+  display:none;
+  margin-top:10px;
+  padding:10px;
+  border-radius:12px;
+  background:#fff7ed;
+  color:#9a3412;
+  font-size:14px;
+  font-weight:600;
+  border:1px solid #fed7aa;
+}
 </style>
 </head>
 
@@ -77,9 +89,11 @@ h1{
 <h1>Attendance</h1>
 
 <div class="card">
-  <button class="btn btn-in" onclick="checkIn()"> Check In</button>
-  <button class="btn btn-out" onclick="checkOut()"> Check Out</button>
+  <button class="btn btn-in" onclick="checkIn()">🟢 Check In</button>
+  <button class="btn btn-out" onclick="checkOut()">🔴 Check Out</button>
 </div>
+
+<div id="warningText" class="warning">⚠️ Upload your work photos</div>
 
 <div class="card">
   <img id="selfiePreview" class="preview">
@@ -91,16 +105,18 @@ h1{
 let checkInLat=null, checkInLng=null;
 
 function checkIn(){
+  document.getElementById("warningText").style.display="none";
   takeSelfie();
   getLocation(true);
 }
 
 function checkOut(){
-  uploadWorkPhotos();
+  document.getElementById("warningText").style.display="block";
+  takeWorkPhotos();
   getLocation(false);
 }
 
-// SELFIE
+// SELFIE (CHECKIN)
 function takeSelfie(){
   const input=document.createElement("input");
   input.type="file";
@@ -120,11 +136,12 @@ function takeSelfie(){
   input.click();
 }
 
-// WORK PHOTOS
-function uploadWorkPhotos(){
+// WORK PHOTOS (CHECKOUT) - CAMERA + MULTIPLE
+function takeWorkPhotos(){
   const input=document.createElement("input");
   input.type="file";
   input.accept="image/*";
+  input.capture="camera";
   input.multiple=true;
   input.click();
 }
@@ -149,8 +166,6 @@ function getLocation(isCheckIn){
           "Location: " + address;
 
         if(isCheckIn){
-          checkInLat=lat;
-          checkInLng=lng;
           localStorage.setItem("checkin_location",
             JSON.stringify({lat,lng,address}));
         }else{
