@@ -60,18 +60,36 @@ h1{margin:15px 0;}
 .preview{width:100%;margin-top:10px;border-radius:12px;display:none;}
 .work-previews img{width:100%;margin-top:8px;border-radius:12px;}
 .small{font-size:13px;color:#555;margin-top:6px;}
-.warning{display:none;background:#fee2e2;color:#7f1d1d;padding:10px;border-radius:12px;margin-top:10px;}
+
+/* TOAST POPUP */
+.toast{
+  position:fixed;
+  top:20px;
+  left:-320px;
+  background:#22c55e;
+  color:white;
+  padding:12px 18px;
+  border-radius:12px;
+  font-weight:600;
+  box-shadow:0 5px 15px rgba(0,0,0,0.2);
+  transition:left 0.5s ease;
+  z-index:9999;
+}
+.toast.show{left:20px;}
 </style>
 </head>
 
 <body>
+
+<div id="toast" class="toast"></div>
+
 <div class="app-container">
 
 <img src="https://i.imgur.com/284Ol04.jpeg" class="logo">
 <h1>Attendance</h1>
 
 <div class="card">
-<button class="btn btn-in" onclick="checkIn()">🟢 ss Check In</button>
+<button class="btn btn-in" onclick="checkIn()">🟢 Check In</button>
 <button class="btn btn-upload" onclick="uploadWorkPhotos()">📸 Upload Work Photos</button>
 <button class="btn btn-final" id="finalCheckoutBtn" onclick="finalCheckout()">🔴 Checkout</button>
 </div>
@@ -79,22 +97,34 @@ h1{margin:15px 0;}
 <div class="card">
 <img id="selfiePreview" class="preview">
 <div id="workPreviewBox" class="work-previews"></div>
-<div id="locationText" class="small"></div>
-<div id="timeText" class="small"></div>
+
+<div id="checkinInfo" class="small"></div>
+<div id="checkoutInfo" class="small"></div>
+</div>
+
 </div>
 
 <script>
-let checkInTime = null;
-let checkOutTime = null;
-let checkInAddress = "";
-let checkOutAddress = "";
-let workPhotosUploaded = false;
+let checkInTime=null;
+let checkOutTime=null;
+let checkInAddress="";
+let checkOutAddress="";
+let checkInCoords=null;
+let workPhotosUploaded=false;
+let outside200Notified=false;
+
+/* TOAST */
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.innerText=msg;
+  t.classList.add("show");
+  setTimeout(()=>{t.classList.remove("show");},3000);
+}
 
 /* CHECK IN */
 function checkIn(){
   takeSelfie();
   getLocation(true);
-  checkInTime = new Date();
 }
 
 /* SELFIE */
@@ -108,7 +138,6 @@ function takeSelfie(){
     reader.onload=()=>{
       document.getElementById("selfiePreview").src=reader.result;
       document.getElementById("selfiePreview").style.display="block";
-      document.getElementById("timeText").innerText="Check-in Time: "+new Date().toLocaleString();
     }
     reader.readAsDataURL(e.target.files[0]);
   }
@@ -135,16 +164,17 @@ function uploadWorkPhotos(){
       r.readAsDataURL(f);
     });
 
-    workPhotosUploaded = true;
+    workPhotosUploaded=true;
     document.getElementById("finalCheckoutBtn").style.display="block";
+    showToast("📸 Photos uploaded successfully");
   }
   input.click();
 }
 
-/* FINAL CHECKOUT */
+/* CHECKOUT */
 function finalCheckout(){
   if(!workPhotosUploaded){
-    alert("Please upload work photos first");
+    showToast("⚠️ Upload work photos first");
     return;
   }
   getLocation(false);
@@ -159,35 +189,74 @@ function getLocation(isCheckIn){
     fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
     .then(r=>r.json())
     .then(d=>{
-      document.getElementById("locationText").innerText="Location: "+d.display_name;
+      const now=new Date();
 
       if(isCheckIn){
-        checkInAddress = d.display_name;
-        alert("Check-in successful");
+        checkInTime=now;
+        checkInAddress=d.display_name;
+        checkInCoords={lat,lng};
+
+        document.getElementById("checkinInfo").innerHTML=
+          "🟢 Check-in<br>"+
+          "🕒 "+checkInTime.toLocaleString()+"<br>"+
+          "📍 "+checkInAddress;
+
+        showToast("✅ Check-in successful");
+
+        setInterval(checkWorkingZone,60000);
+
       }else{
-        checkOutTime = new Date();
-        checkOutAddress = d.display_name;
+        const dist=getDistance(checkInCoords.lat,checkInCoords.lng,lat,lng);
 
-        const diffMs = checkOutTime - checkInTime;
-        const hours = (diffMs/1000/60/60).toFixed(2);
-
-        const dataForAdmin = {
-          checkInTime: checkInTime.toLocaleString(),
-          checkOutTime: checkOutTime.toLocaleString(),
-          workingHours: hours,
-          date: checkOutTime.toLocaleDateString(),
-          checkInAddress: checkInAddress,
-          checkOutAddress: checkOutAddress
-        };
-
-        console.log("SEND TO ADMIN PANEL:", dataForAdmin);
-        alert("Checkout successful");
-
-        // future API:
-        // fetch("/save-attendance", {method:"POST", body:JSON.stringify(dataForAdmin)})
+        if(dist<=0.5){
+          completeCheckout(d.display_name);
+        }else{
+          showToast("❌ Not in working zone – waiting for admin approval");
+        }
       }
     });
   });
+}
+
+/* BACKGROUND 200m CHECK */
+function checkWorkingZone(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const dist=getDistance(
+      checkInCoords.lat,
+      checkInCoords.lng,
+      pos.coords.latitude,
+      pos.coords.longitude
+    );
+
+    if(dist>0.2 && !outside200Notified){
+      outside200Notified=true;
+      fetch("notify-admin.php",{method:"POST"});
+    }
+  });
+}
+
+/* COMPLETE CHECKOUT */
+function completeCheckout(addr){
+  checkOutTime=new Date();
+  checkOutAddress=addr;
+
+  document.getElementById("checkoutInfo").innerHTML=
+    "🔴 Check-out<br>"+
+    "🕒 "+checkOutTime.toLocaleString()+"<br>"+
+    "📍 "+checkOutAddress;
+
+  showToast("🔴 Checkout successful");
+}
+
+/* DISTANCE */
+function getDistance(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lat2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+
+  Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 </script>
 
