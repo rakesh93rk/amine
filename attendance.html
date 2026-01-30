@@ -57,11 +57,33 @@ h1{margin:15px 0;}
 .btn-upload{background:#f1f5f9;color:#1e293b;}
 .btn-final{background:#ef4444;color:white;display:none;}
 
-.preview{width:100%;margin-top:10px;border-radius:12px;display:none;}
-.work-previews img{width:100%;margin-top:8px;border-radius:12px;}
+.preview{
+  width:120px;
+  height:120px;
+  object-fit:cover;
+  margin-top:10px;
+  border-radius:14px;
+  display:none;
+  border:2px solid #2563eb;
+}
+
+.work-previews img{
+  width:120px;
+  height:120px;
+  object-fit:cover;
+  margin-top:8px;
+  border-radius:12px;
+  border:1px solid #ccc;
+}
+
+.photo-row{
+  display:flex;
+  justify-content:space-around;
+  gap:10px;
+}
+
 .small{font-size:13px;color:#555;margin-top:6px;}
 
-/* TOAST POPUP */
 .toast{
   position:fixed;
   top:20px;
@@ -95,7 +117,18 @@ h1{margin:15px 0;}
 </div>
 
 <div class="card">
-<img id="selfiePreview" class="preview">
+
+<div class="photo-row">
+  <div>
+    <b>Check-In</b><br>
+    <img id="checkinPhotoPreview" class="preview">
+  </div>
+  <div>
+    <b>Checkout</b><br>
+    <img id="checkoutPhotoPreview" class="preview">
+  </div>
+</div>
+
 <div id="workPreviewBox" class="work-previews"></div>
 
 <div id="checkinInfo" class="small"></div>
@@ -107,11 +140,10 @@ h1{margin:15px 0;}
 <script>
 let checkInTime=null;
 let checkOutTime=null;
-let checkInAddress="";
-let checkOutAddress="";
 let checkInCoords=null;
 let workPhotosUploaded=false;
-let outside200Notified=false;
+let zoneTimer=null;
+let isCheckedIn=false;
 
 /* TOAST */
 function showToast(msg){
@@ -123,34 +155,47 @@ function showToast(msg){
 
 /* CHECK IN */
 function checkIn(){
-  takeSelfie();
-  getLocation(true);
+  if(isCheckedIn){
+    showToast("⚠️ You are already checked in");
+    return;
+  }
+  takeSelfie("checkin", ()=>getLocation(true));
 }
 
 /* SELFIE */
-function takeSelfie(){
+function takeSelfie(type, callback){
   const input=document.createElement("input");
   input.type="file";
   input.accept="image/*";
   input.capture="camera";
   input.onchange=e=>{
+    if(!e.target.files[0]) return;
     const reader=new FileReader();
     reader.onload=()=>{
-      document.getElementById("selfiePreview").src=reader.result;
-      document.getElementById("selfiePreview").style.display="block";
-    }
+      const img = type==="checkin"
+        ? document.getElementById("checkinPhotoPreview")
+        : document.getElementById("checkoutPhotoPreview");
+      img.src=reader.result;
+      img.style.display="block";
+      if(callback) callback();
+    };
     reader.readAsDataURL(e.target.files[0]);
-  }
+  };
   input.click();
 }
 
-/* UPLOAD WORK PHOTOS */
+/* WORK PHOTOS */
 function uploadWorkPhotos(){
+  if(!checkInCoords){
+    showToast("⚠️ Please check in first");
+    return;
+  }
+
   const input=document.createElement("input");
   input.type="file";
   input.accept="image/*";
-  input.capture="camera";
   input.multiple=true;
+
   input.onchange=e=>{
     const box=document.getElementById("workPreviewBox");
     box.innerHTML="";
@@ -160,67 +205,89 @@ function uploadWorkPhotos(){
         const img=document.createElement("img");
         img.src=r.result;
         box.appendChild(img);
-      }
+      };
       r.readAsDataURL(f);
     });
 
     workPhotosUploaded=true;
     document.getElementById("finalCheckoutBtn").style.display="block";
-    showToast("📸 Photos uploaded successfully");
-  }
+    showToast("📸 Work photos uploaded");
+  };
+
   input.click();
+}
+
+/* SHORT ADDRESS */
+function shortAddress(addr){
+  if(!addr) return "Unknown area";
+  return [
+    addr.road || addr.neighbourhood || addr.suburb || "",
+    addr.city || addr.town || addr.village || ""
+  ].filter(Boolean).join(", ");
 }
 
 /* CHECKOUT */
 function finalCheckout(){
+  if(!isCheckedIn){
+    showToast("⚠️ Please check in first");
+    return;
+  }
   if(!workPhotosUploaded){
     showToast("⚠️ Upload work photos first");
     return;
   }
-  getLocation(false);
+  takeSelfie("checkout", ()=>getLocation(false));
 }
 
 /* LOCATION */
 function getLocation(isCheckIn){
-  navigator.geolocation.getCurrentPosition(pos=>{
+  navigator.geolocation.getCurrentPosition(function(pos){
     const lat=pos.coords.latitude;
     const lng=pos.coords.longitude;
+    const now=new Date();
 
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,{
+      headers:{'User-Agent':'Levi-Attendance-App'}
+    })
     .then(r=>r.json())
     .then(d=>{
-      const now=new Date();
+      const addr = shortAddress(d.address);
 
       if(isCheckIn){
         checkInTime=now;
-        checkInAddress=d.display_name;
         checkInCoords={lat,lng};
+        isCheckedIn=true;
 
         document.getElementById("checkinInfo").innerHTML=
           "🟢 Check-in<br>"+
           "🕒 "+checkInTime.toLocaleString()+"<br>"+
-          "📍 "+checkInAddress;
+          "📍 "+addr;
 
         showToast("✅ Check-in successful");
 
-        setInterval(checkWorkingZone,60000);
+        if(zoneTimer) clearInterval(zoneTimer);
+        zoneTimer=setInterval(checkWorkingZone,60000);
 
       }else{
-        const dist=getDistance(checkInCoords.lat,checkInCoords.lng,lat,lng);
+        checkOutTime=now;
 
-        if(dist<=0.5){
-          completeCheckout(d.display_name);
-        }else{
-          showToast("❌ Not in working zone – waiting for admin approval");
-        }
+        document.getElementById("checkoutInfo").innerHTML=
+          "🔴 Check-out<br>"+
+          "🕒 "+checkOutTime.toLocaleString()+"<br>"+
+          "📍 "+addr;
+
+        showToast("🔴 Checkout successful");
       }
     });
+  },
+  function(){
+    showToast("❌ Please allow location permission");
   });
 }
 
-/* BACKGROUND 200m CHECK */
+/* ZONE CHECK (200m notify admin only) */
 function checkWorkingZone(){
-  navigator.geolocation.getCurrentPosition(pos=>{
+  navigator.geolocation.getCurrentPosition(function(pos){
     const dist=getDistance(
       checkInCoords.lat,
       checkInCoords.lng,
@@ -228,34 +295,24 @@ function checkWorkingZone(){
       pos.coords.longitude
     );
 
-    if(dist>0.2 && !outside200Notified){
-      outside200Notified=true;
-      fetch("notify-admin.php",{method:"POST"});
+    if(dist>0.2){
+      fetch("notify-admin.php",{
+        method:"POST",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:"message=Staff outside 200m work zone"
+      });
     }
   });
-}
-
-/* COMPLETE CHECKOUT */
-function completeCheckout(addr){
-  checkOutTime=new Date();
-  checkOutAddress=addr;
-
-  document.getElementById("checkoutInfo").innerHTML=
-    "🔴 Check-out<br>"+
-    "🕒 "+checkOutTime.toLocaleString()+"<br>"+
-    "📍 "+checkOutAddress;
-
-  showToast("🔴 Checkout successful");
 }
 
 /* DISTANCE */
 function getDistance(lat1,lon1,lat2,lon2){
   const R=6371;
   const dLat=(lat2-lat1)*Math.PI/180;
-  const dLon=(lat2-lon1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
   const a=Math.sin(dLat/2)**2+
-  Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
-  Math.sin(dLon/2)**2;
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+    Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 </script>
